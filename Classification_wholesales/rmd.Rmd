@@ -1,0 +1,302 @@
+---
+title: "Klasifikasi dengan Model Regresi Logistik dan K-NN "
+author: "Dedy Gusnadi Sianipar"
+date: "4/24/2021"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    thumbnails: false
+    lightbox: true
+    gallery: true
+    highlight: kate
+    toc_depth: 2
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{css, echo=FALSE}
+@media (prefers-color-scheme: dark){  
+  body{
+    background-color: black;
+    filter: invert(1);
+  }
+}
+
+.columns{display: flex;}
+h1 {
+  color: red
+  font-family: "Lato","proxima-nova","Helvetica Neue",Arial,sans-serif;
+  font-size: 220%;
+  }
+h2 {
+  color: red;
+  font-family: "Lato","proxima-nova","Helvetica Neue",Arial,sans-serif;
+  font-size: 120%;
+  }
+h3 {
+  color: "#9f2042";
+  font-family: "Lato","proxima-nova","Helvetica Neue",Arial,sans-serif;
+  font-size: 110%;
+  }
+h4 {
+  color: "#9f2042";
+  font-family: "Lato","proxima-nova","Helvetica Neue",Arial,sans-serif;
+  font-size: 100%;
+  }
+
+#content ul {font-size: 14px;}
+
+
+
+```
+
+# Pendahuluan
+##           {.tabset .tabset-fade .tabset-pills}
+
+
+### Apa yang akan kita lakukan?
+  Kita akan mencoba melakukan prediksi terhadap data wholesale dengan model klasifikasi. 
+  Saya sebagai seorang distributor ingin melakukan penghabisan stok bahan yang memiliki kadarluarsa dalam jangka waktu dekat, dengan memberikan promo/diskon terhadap jenis perusahaan yang konsumsi barang tersbut dengan cepat , seperti horeca 
+
+# Data
+##           {.tabset .tabset-fade .tabset-pills}
+### Package & Import Data
+
+```{r, warning=FALSE,include=TRUE,message=FALSE}
+library(tidyverse) # feature engineering
+library(rsample) # split data
+library(caret) # untuk confusion matrix
+library(car) # untuk uji VIF
+options(scipen = 99999)
+```
+
+```{r}
+ws <- read.csv("wholesale.csv")
+summary(ws)
+```
+kita bisa simpulkan dari sumarry terdapat :
+1. terdapat outlier pada hampir keseluruhan data( kecuali channel region ), dilihat dari nilai max dan perbedaan nilai antara mean dan median, outlier ini dapat mempengaruhi model yang akan kita buat 
+
+
+### Data Check
+```{r}
+glimpse(ws)
+```
+<p> ) 
+. `FRESH`: pengeluaran tahunan (m.u.) untuk produk segar (Berkelanjutan)
+. `MILK`: pengeluaran tahunan (m.u.) untuk produk susu (Berkelanjutan)
+. `GROCERY`: pengeluaran tahunan (m.u.) untuk produk grosir (Berkelanjutan)
+. `FROZEN`: pengeluaran tahunan (m.u.) untuk produk beku (Berkelanjutan)
+. `DETERGENTS_PAPER`: pengeluaran tahunan (m.u.) untuk deterjen dan produk kertas (Berkelanjutan)
+. `DELICATESSEN`: pengeluaran tahunan (m.u.) dan produk makanan jadi (Berkelanjutan)
+. `CHANNEL`: saluran pelanggan - Horeca (Hotel / Restoran / Kafe) (1) atau saluran Ritel (Nominal) (2)
+. `REGION`: Wilayah pelanggan - Lisnon (1), Oporto(2) atau Lainnya (3)
+</p>
+
+
+<h3> Check Unique </h3>
+```{r}
+unique(ws$Channel)
+unique(ws$Region)
+```
+Variabel `Channel` dengan `Region` dapat kita ubah menjadi tipe data faktor
+
+<h3> Check Missing Value </h3> 
+```{r}
+anyNA(ws)
+```
+
+Tidak ada NA pada data
+
+
+### Change Type Data Set
+```{r}
+
+tws <- ws %>% 
+  mutate(Region = as.factor(Region))
+tws$Channel <- factor(tws$Channel, levels = c(1,2), labels = c("1","0"))
+datas_new <- tws
+```
+
+kita mengubah data `channel` kategori  `2`  menjadi `0` , untuk menjadikannya lebih umum dan tipe data sudah berhasil diganti menjadi kategori/faktor
+
+<h3> Check Persebaran data </h3>
+```{r}
+tws %>% ggplot(aes(x=Fresh,y=Milk,col= Channel))+
+  geom_point()
+```
+
+dari grafik yang didapat dapat disimpulkan bahwa sebenarnya data yang digunakan tidak baik untuk dilakukan model klasifikasi, dikarenakan data cenderung berada di sisi sebelah kiri, sehingga ketika dilakukan siqmoid model tidak akn mendapatkan klasifikasi yang baik
+
+
+
+# Regresi Logistik
+##           {.tabset .tabset-fade .tabset-pills}
+
+### Pre-Processing Data
+
+```{r}
+prop.table(table(datas_new$Channel))
+```
+terlihat proporsi data antara horeca dan ritel cukup seimbang
+
+```{r}
+table(datas_new$Channel)
+```
+terdapat 298 data horeca dan 142 data ritel
+
+### Splitting Train-Test
+
+```{r}
+set.seed(26)
+init <- initial_split(data = datas_new,prop = 0.8, strata = Channel)
+train <- training(init)
+test <-  testing(init)
+```
+
+Dilakukan penetapan set.seed agar hasil random ketika digunakan oleh orang lain tidak berubah ubah , pemilihan angka 26 merupakan berdasarkan angka kelahiran saya, untuk penentuan angka ini bebas.
+
+Data di Split menjadi dua bagian dengan proporsi data yaitu 80% (train) dan 20%(test)
+
+```{r}
+prop.table(table(train$Channel))
+prop.table(table(test$Channel))
+```
+Nice!. Setelah dilakukan split data dan dilakukan pengecekan hasil split data terhadap proporsi target kita didapatkan hasil yang sama dengan proprosi sebelumnya.
+
+### Model Fitting
+
+  Pertama, Mari kita membuat model dengan menggunakan seluruh varibel yang ada dengan target yaitu `Channel`
+  
+```{r, message=TRUE,warning=TRUE}
+model_1 <- glm(formula = Channel~., data = train, family = "binomial")
+summary(model_1)
+```
+`glm.fit: fitted probabilities numerically 0 or 1 occurredList of 30`
+  Terdapat warning yang menyatakan bahwa model yang digunakan terdapat `Perfect Separator`. Berdasarkan hasil Sumaary sebelumnya dapat dilihat bahwa terdapat banyak data outlier pada beberapa Variabel contohnya `Grocery` Dan `Region`. Mari kita liat visualisasinya
+
+```{r, }
+plot(train$Channel, train$Grocery)
+#dont use grocery
+# GGally::ggcorr(train %>% 
+#                  select_if(is.numeric),label = TRUE)
+```
+dari hasil visualisasi dapat disimpulkan bahwa outlier pada data 1 atau `Horeca` masih dalam range data 0 atau `retail` sehingga kita putuskan untuk tidak menggunakan variabel `grocery`. 
+
+```{r, message=TRUE,warning=TRUE}
+model_2 <- glm(formula = Channel~Frozen+Milk+Fresh+Region+Delicassen, data = train, family = "binomial")
+summary(model_2)
+```
+Nice! Perfect Separator berhasil kita keluarkan,
+sekarang mari kita coba membuat model dengan `stepwise`
+
+```{r}
+summary(step(model_2, direction = "both", trace = 0))
+```
+Dari `Sumarry` yang didapatkan bisa disimpulkan bahwa:
+1. hampir semua variabel yang digunakan signifikan kecuali variabel `Fresh`
+2. Nilai Estimate Intercept(log off odds) Sebesar -2.5581
+3. Nilai Estimate `Milk` sebesar 0.00035340 dan bernilai positif maka disimpulkan setiap peningkatan 1 pada Variabel `milk` akan meningkatkan nilai prediksi `channel` sebesar 0.00035340
+3. Nilai Estimate `Frozen` sebesar -0.00036765 dan bernilai negatif maka disimpulkan setiap peningkatan 1 pada Variabel `Frozen` akan menurunkan nilai prediksi channel sebesar  0.00035340
+4. Nilai Estimate Pada Region2 sebesar 1.73424777 dan bernilai positif maka disimpulkan setiap peningkatan 1 pada variabel `Region 2` maka akan meningkatkan nilai prediksi sebesar 1.73424777
+4. Nilai Estimate Pada Region3 sebesar 0.95970991 dan bernilai positif maka disimpulkan setiap peningkatan 1 pada variabel `Region 3` maka akan meningkatkan nilai prediksi sebesar 0.95970991
+
+<h3> Uji Multicolinearitas </h3>
+
+```{r}
+vif(step(model_2, direction = "both", trace = 0))
+```
+Berdasarkan Uji asumsi terlihat tidak adanya nilai VIF yang lebih dari 10 artinya tidak adanya hubungan yang kuat antar variabel prediktornya
+
+### Prediction
+
+kita lakukan pengujian model dengan data test
+
+```{r}
+test$pred.channel <- predict(object = model_2, newdata = test, type = "response")
+```
+
+
+```{r}
+test$pred.label <- ifelse(test$pred.channel<0.5,0,1)
+test$pred.label <- as.factor(test$pred.label)
+test[1:10, c("Channel", "pred.label")]
+```
+Dalam syntax diatas, ketika probabilitas data test lebih dari 0.5, artinya dia `Horeca` atau `Retail`.
+setelah model dilakukan pengujian terhadap data test maka kita melihat bagaimana hasil prediksi dengan aktual 
+
+### Model Evaluation 
+
+<h3> Confusion Matrix </h3>
+
+```{r}
+library(caret)
+confusionMatrix(data = test$pred.label, reference = test$Channel, positive = "1")
+```
+Re-call/Sensitivity = dari semua data aktual yang positif, seberapa mampu proporsi model saya menebak benar.
+Specificity = dari semua data aktual yang negatif, seberapa mampu proporsi model saya menebak yang benar.
+Accuracy = seberapa mampu model saya menebak dengan benar target Y.
+Precision = dari semua hasil prediksi, seberapa mampu model saya dapat menebak benar kelas positif
+
+Berdasarkan hasil confusionMatrix diatas, dapat kita ambil informasi bahwa kemampuan model dalam menebak target Y (1`horeca` atau 0`retail`) sebesar 16%. Sedangkan dari keluruhan data aktual channel tipe `Horeca`, model dapat mampu menebak benar sebesar 10,2%. Dari keseluruhan data aktual channel tipe `retail`, model mampu menebak dengan benar sebesar 23%. Dari keseluruhan hasil prediksi yang mampu ditebak oleh model, model mampu menebak benar kelas positif sebesar 6%.
+
+Hasil model yang kurang baik sebenarnya bukan dikarenakan pemilihan prediktor yang kurang baik melaikan persebaran daata yang ada pada prediktor cukup tidak bagus,  terdapat banayak outlier sehingga tidak menampilkan kurva sigmoid
+
+# K-NN
+##           {.tabset .tabset-fade .tabset-pills}
+
+### Pre-Processing & Splitting Train-Test
+```{r}
+#predictor
+ws_train_x <- train %>% 
+  select(-Channel)
+ws_test_x <- test %>% 
+  select(-c("Channel","pred.channel","pred.label"))
+
+#target
+ws_train_y <- train %>% 
+  select(Channel)
+ws_test_y <- test %>% 
+  select(Channel)
+
+```
+
+###  Scale & K Value
+
+```{r}
+#scale
+ws_train_xs <- scale(ws_train_x %>% select(-Region))
+ws_test_xs <- scale(ws_test_x %>% select(-Region))
+dim(ws_train_xs)
+dim(ws_test_xs)
+```
+
+```{r}
+#K Value
+sqrt(nrow(ws_train_xs))
+```
+
+### Model Fitting
+
+```{r}
+library(class)
+ws_pred <- knn(ws_train_xs,ws_test_xs,cl = ws_train_y$Channel,k=19)
+head(ws_pred)
+```
+
+### Model Evaluation
+<h3> Confusion matrix </h3>
+
+```{r}
+confusionMatrix(data = ws_pred,reference = as.factor(ws_test_y$Channel),positive = "1")
+```
+
+Hasil penelitian menunjukkan bahwa K-NN kami dengan K = 19 memiliki akurasi 93,1% pada dataset uji, artinya 93,1% data kami diklasifikasikan dengan benar. Nilai sensitivitas dan spesifisitas 93.22% dan 92.86%. Ini menunjukkan bahwa sebagian besar hasil positif diklasifikasikan dengan benar tetapi hanya sejumlah kecil hasil negatif yang diklasifikasikan dengan benar. Nilai prediksi presisi / positif adalah 96.49%, artinya 96.49% prediksi positif kami benar.
+
+
+# Conclusion
+
+  Berdasarkan Evaluasi kedua model, dapat disimpulkan bahwa model klasifikasi memperlihatkan nilai akurasi , recall , maupun prediksi yang sangat kecil , sementara untuk model Knn memperlihatkan hasil yang sangat bagus. Berdasarkan hasil EDA dari awal sebenarnya dapat disimpulkan bahwa data yang digunakan tidak cocok untuk dilakukan model klasifikasi(logistik). 
+
